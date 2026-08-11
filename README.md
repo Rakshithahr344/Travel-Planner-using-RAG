@@ -1,4 +1,4 @@
-# ✈️ AI Prompt-Based Travel Planner
+# ✈️ Travel planner using RAG
 
 An AI-powered travel planning application that creates personalized travel plans based on the user's destination, budget, number of days, and interests.
 
