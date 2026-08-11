@@ -1,4 +1,3 @@
-
 import os
 import streamlit as st
 
@@ -11,9 +10,9 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 
 
-# ==============================
+# ==========================================
 # PAGE CONFIG
-# ==============================
+# ==========================================
 
 st.set_page_config(
     page_title="AI Travel Planner",
@@ -28,9 +27,9 @@ st.write(
 )
 
 
-# ==============================
+# ==========================================
 # API KEY
-# ==============================
+# ==========================================
 
 api_key = st.sidebar.text_input(
     "Google Gemini API Key",
@@ -44,9 +43,9 @@ if not api_key:
 os.environ["GOOGLE_API_KEY"] = api_key
 
 
-# ==============================
+# ==========================================
 # TRAVEL KNOWLEDGE BASE
-# ==============================
+# ==========================================
 
 travel_data = [
     {
@@ -112,15 +111,16 @@ documents = [
 ]
 
 
-# ==============================
-# RAG
-# ==============================
+# ==========================================
+# RAG RETRIEVER
+# ==========================================
 
 @st.cache_resource
-def create_retriever():
+def create_retriever(api_key):
 
     embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001"
+        model="models/gemini-embedding-001",
+        google_api_key=api_key
     )
 
     vectorstore = FAISS.from_documents(
@@ -133,28 +133,31 @@ def create_retriever():
     )
 
 
-retriever = create_retriever()
+retriever = create_retriever(api_key)
 
 
-# ==============================
-# GEMINI
-# ==============================
+# ==========================================
+# GEMINI MODEL
+# ==========================================
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash",
-    temperature=0.4
+    temperature=0.4,
+    google_api_key=api_key
 )
 
 
-# ==============================
+# ==========================================
 # PROMPT TEMPLATE
-# ==============================
+# ==========================================
 
-prompt = ChatPromptTemplate.from_template("""
+prompt = ChatPromptTemplate.from_template(
+    """
 You are an expert travel planner.
 
-Create a practical travel plan based on the user's requirements
-and the retrieved travel information.
+Create a practical and budget-friendly travel plan
+based on the user's requirements and the retrieved
+travel information.
 
 Destination:
 {destination}
@@ -171,7 +174,7 @@ Interests:
 Retrieved Travel Information:
 {context}
 
-Generate the answer using:
+Generate the answer in the following format:
 
 ## ✈️ Trip Overview
 
@@ -186,24 +189,29 @@ Generate the answer using:
 ## 💡 Travel Tips
 
 Keep the plan within the user's budget as much as possible.
+
 Mention that prices are approximate.
-Do not claim exact hotel availability or prices.
-""")
+
+Do not claim exact hotel availability or exact prices.
+
+Make the answer practical, clear and easy to understand.
+"""
+)
 
 
-# ==============================
+# ==========================================
 # USER INPUT
-# ==============================
+# ==========================================
 
-st.sidebar.header("Trip Details")
+st.sidebar.header("🧳 Trip Details")
 
 destination = st.sidebar.selectbox(
-    "Destination",
+    "📍 Destination",
     ["Goa", "Bangalore", "Mysore", "Manali", "Kerala"]
 )
 
 budget = st.sidebar.number_input(
-    "Budget (₹)",
+    "💰 Budget (₹)",
     min_value=1000,
     max_value=500000,
     value=20000,
@@ -211,14 +219,14 @@ budget = st.sidebar.number_input(
 )
 
 days = st.sidebar.number_input(
-    "Number of Days",
+    "📅 Number of Days",
     min_value=1,
     max_value=30,
     value=3
 )
 
 interests = st.sidebar.multiselect(
-    "Interests",
+    "❤️ Interests",
     [
         "Beaches",
         "Nature",
@@ -232,48 +240,125 @@ interests = st.sidebar.multiselect(
 )
 
 
-# ==============================
-# GENERATE PLAN
-# ==============================
+# ==========================================
+# GENERATE TRAVEL PLAN
+# ==========================================
 
 if st.button("🚀 Generate Travel Plan"):
 
     if not interests:
-        st.warning("Please select at least one interest.")
+
+        st.warning(
+            "⚠️ Please select at least one interest."
+        )
 
     else:
 
-        with st.spinner("Creating your travel plan..."):
+        try:
 
-            query = f"""
-            Destination: {destination}
-            Budget: ₹{budget}
-            Days: {days}
-            Interests: {", ".join(interests)}
-            """
+            with st.spinner(
+                "🤖 Creating your personalized travel plan..."
+            ):
 
-            retrieved_docs = retriever.invoke(query)
+                # ------------------------------
+                # USER QUERY
+                # ------------------------------
 
-            context = "\n\n".join(
-                doc.page_content
-                for doc in retrieved_docs
+                query = f"""
+                Destination: {destination}
+                Budget: ₹{budget}
+                Days: {days}
+                Interests: {", ".join(interests)}
+                """
+
+                # ------------------------------
+                # RAG RETRIEVAL
+                # ------------------------------
+
+                retrieved_docs = retriever.invoke(query)
+
+                context = "\n\n".join(
+                    doc.page_content
+                    for doc in retrieved_docs
+                )
+
+                # ------------------------------
+                # CREATE PROMPT
+                # ------------------------------
+
+                formatted_prompt = prompt.format(
+                    destination=destination,
+                    budget=budget,
+                    days=days,
+                    interests=", ".join(interests),
+                    context=context
+                )
+
+                # ------------------------------
+                # GEMINI RESPONSE
+                # ------------------------------
+
+                response = llm.invoke(
+                    formatted_prompt
+                )
+
+                # ------------------------------
+                # EXTRACT ONLY TEXT
+                # ------------------------------
+
+                content = response.content
+
+                if isinstance(content, list):
+
+                    text_parts = []
+
+                    for item in content:
+
+                        if isinstance(item, dict):
+
+                            if item.get("type") == "text":
+
+                                text_parts.append(
+                                    item.get("text", "")
+                                )
+
+                        elif isinstance(item, str):
+
+                            text_parts.append(item)
+
+                    answer = "\n".join(text_parts)
+
+                else:
+
+                    answer = str(content)
+
+                # ------------------------------
+                # DISPLAY RESULT
+                # ------------------------------
+
+                st.success(
+                    "✅ Travel plan generated successfully!"
+                )
+
+                st.markdown(answer)
+
+        except Exception as e:
+
+            st.error(
+                "❌ Something went wrong while generating "
+                "the travel plan."
             )
 
-            formatted_prompt = prompt.format(
-                destination=destination,
-                budget=budget,
-                days=days,
-                interests=", ".join(interests),
-                context=context
-            )
+            st.exception(e)
 
-            response = llm.invoke(formatted_prompt)
 
-            st.markdown(response.content)
-
+# ==========================================
+# FOOTER
+# ==========================================
 
 st.divider()
 
 st.caption(
-    "AI Prompt-Based Travel Planner | RAG + Gemini + LangChain + Streamlit"
+    "AI Prompt-Based Travel Planner | "
+    "RAG + FAISS + Gemini + LangChain + Streamlit"
 )
