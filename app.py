@@ -276,4 +276,4 @@ st.divider()
 
 st.caption(
     "AI Prompt-Based Travel Planner | RAG + Gemini + LangChain + Streamlit"
-)S
+)
